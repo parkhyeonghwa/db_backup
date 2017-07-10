@@ -1,24 +1,30 @@
 package main
 
 import(
+	"database/sql"
 	"fmt"
-	"os"
-	"golang.org/x/crypto/ssh"
-	"log"
-	"github.com/pkg/sftp"
-	"io/ioutil"
-	"time"
+	_ "github.com/go-sql-driver/mysql"
+	"os/exec"
 	"bufio"
+	"os"
 	"strings"
+	"time"
+	"io/ioutil"
+	"log"
+	"golang.org/x/crypto/ssh"
+	"github.com/pkg/sftp"
 	"github.com/vFlagR/db_backup/unzip"
 )
 
 func main(){
 	var srcPath string
 	var filename string
+	var dbName string
 	var dstPath = "/home/carnyx/Desktop/"
 	var gzipSuffix = ".sql.gz"
 	var sqlSuffix = ".sql"
+	var db *sql.DB
+	var err error
 
 	fmt.Println("Please select which database you would like to import:\n" +
 				"0 - Old awards (chipshop)\n" +
@@ -37,18 +43,22 @@ func main(){
 		case "0":
 			srcPath = "/backup/aws-arctic-fox/"
 			filename = "all_arctic_fox_databases-" + yDate.Format("20060102")
+			dbName = "award_chip_shop"
 		case "1":
 			srcPath = "/backup/aws-londinium/"
 			filename = "jobs-" + yDate.Format("20060102")
+			dbName = "jobs"
 		case "2":
 			srcPath = "/backup/aws-londinium/"
 			filename = "awards_prod-" + yDate.Format("20060102")
+			dbName = "awards_prod"
 		case "3":
 			srcPath = "/backup/aws-robocod-db/"
 			filename = yDate.Format("2006_01_02") + "_recommended_agencies"
 		case "4":
 			srcPath = "/backup/aws-yingyang/"
 			filename = "thedrum_prod-" + yDate.Format("20060102")
+			dbName = "thedrum_prod"
 		default:
 			panic("You didn't choose something from the list")
 	}
@@ -108,5 +118,35 @@ func main(){
 
 	fmt.Printf("unzipping %s", filename + gzipSuffix)
 	unzip.UnpackGzipFile(finalPath + gzipSuffix, finalPath + sqlSuffix)
+
+	// Create an sql.DB and check for errors
+	db, err = sql.Open("mysql", "root:carnyx007@/")
+	if err != nil {
+		panic(err.Error())
+	}
+	// sql.DB should be long lived "defer" closes it once this function ends
+	defer db.Close()
+
+	// Test the connection to the database
+	err = db.Ping()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Println("\nConnected to the Database. Beginning import.")
+
+	db.Query("CREATE DATABASE IF NOT EXISTS " + dbName)
+
+	cmd := exec.Command("docker", "exec", "-i", "thedrum_mysql-yingyang_1", "mysql", "-uroot", "-pcarnyx007", dbName)
+	catCmd := exec.Command("cat", finalPath + sqlSuffix)
+
+	cmd.Stdin, _ = catCmd.StdoutPipe()
+
+	_ = catCmd.Start()
+	_ = cmd.Run()
+	_ = catCmd.Wait()
+
+	fmt.Println("I'm all done chief")
+
 }
 
