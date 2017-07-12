@@ -28,7 +28,7 @@ func SshConn() (client *ssh.Client) {
 		},
 	}
 
-	client, err = ssh.Dial("tcp", "172.16.0.224:22", config)
+	client, err = ssh.Dial("tcp", "backup.carnyx.com:22", config)
 	if err != nil {
 		panic("Failed to connect: " + err.Error())
 	}
